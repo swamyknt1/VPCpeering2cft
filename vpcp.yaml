@@ -1,0 +1,156 @@
+Description: Create  different VPC's & subnets with in the region and peer them
+
+Parameters:
+
+  VpcCIDR1:
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 192.168.0.0/25
+
+  VpcCIDR2:
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 172.31.0.0/25
+
+  Subnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
+    Type: String
+    Default: 192.168.0.0/25
+
+  Subnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the second Availability Zone
+    Type: String
+    Default: 172.31.0.0/25
+Resources:
+  VPCA:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR1
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+
+  VPCB:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR2
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+
+  Subnt1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: 
+        Ref: VPCA
+      AvailabilityZone: "us-east-1a"
+      CidrBlock:
+        Ref: Subnet1CIDR
+      MapPublicIpOnLaunch: true
+  Subnt2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: 
+        Ref: VPCB
+      AvailabilityZone: "us-east-1a"
+      CidrBlock:
+        Ref: Subnet2CIDR
+      MapPublicIpOnLaunch: true
+  VPCpr:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties: 
+      PeerVpcId: !Ref VPCB
+      VpcId: !Ref VPCA
+
+  RoutetbleA:
+      Type: AWS::EC2::RouteTable
+      Properties:
+        VpcId: !Ref VPCA
+
+  RoutetbleB:
+      Type: AWS::EC2::RouteTable
+      Properties:
+        VpcId: !Ref VPCB     
+
+  PeeringRouteA:
+      Type: AWS::EC2::Route
+      DependsOn: AttachGateway
+      Properties:
+        DestinationCidrBlock: !Ref Subnet2CIDR
+        RouteTableId: !Ref RoutetbleA
+        VpcPeeringConnectionId: !Ref VPCpr
+
+  PublicRoute:
+         Type: AWS::EC2::Route
+         DependsOn: AttachGateway
+         Properties:
+           RouteTableId: !Ref RoutetbleA
+           DestinationCidrBlock: 0.0.0.0/0
+           GatewayId: !Ref myInternetGatewayA
+
+  PeeringRouteB:
+      Type: AWS::EC2::Route
+      Properties:
+        DestinationCidrBlock: !Ref Subnet1CIDR
+        RouteTableId: !Ref RoutetbleB
+        VpcPeeringConnectionId: !Ref VPCpr
+
+
+  RouteTableAssociationA:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        SubnetId: !Ref Subnt1
+        RouteTableId: !Ref RoutetbleA
+
+  RouteTableAssociationB:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        SubnetId: !Ref Subnt2
+        RouteTableId: !Ref RoutetbleB
+
+  myInternetGatewayA:     
+     Type: AWS::EC2::InternetGateway
+  AttachGateway:
+     Type: AWS::EC2::VPCGatewayAttachment
+     Properties:
+          VpcId: !Ref VPCA
+          InternetGatewayId: !Ref myInternetGatewayA
+
+  VPCBEC2SecurityGroup:
+     Type: AWS::EC2::SecurityGroup
+     Properties:
+      GroupDescription: Private instance security group
+      VpcId: !Ref VPCB
+      SecurityGroupIngress:
+      - IpProtocol: "-1"
+        FromPort: '0'
+        ToPort: '65535'
+        CidrIp: 0.0.0.0/0
+  VPCAEC2SecurityGroup:
+     Type: AWS::EC2::SecurityGroup
+     Properties:
+      GroupDescription: Public instance security group
+      VpcId: !Ref VPCA
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: 0.0.0.0/0
+  InstanceB:
+     Type: AWS::EC2::Instance
+     Properties:
+      SecurityGroupIds: 
+      - Ref: VPCBEC2SecurityGroup
+      SubnetId: !Ref Subnt2
+      KeyName: 'testvpcppeer'
+      ImageId: 'ami-0b69ea66ff7391e80'
+  InstanceA:
+     Type: AWS::EC2::Instance
+     Properties:
+      SecurityGroupIds:
+      - Ref: VPCAEC2SecurityGroup
+      SubnetId: !Ref Subnt1
+      KeyName: 'testvpcppeer'
+      ImageId: 'ami-0b69ea66ff7391e80'
